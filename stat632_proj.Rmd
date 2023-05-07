@@ -1,0 +1,219 @@
+---
+title: "STAT-632_Project"
+author: "Sumasree Simhadri"
+date: "2023-04-14"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#installing caret package to use for splitting the dataset
+#install.packages("caret")
+```
+
+```{r}
+library(MASS)
+library(car)
+```
+
+```{r}
+#load the data set
+whodata<-read.csv("Life Expectancy Data.csv")
+#removing t=rows from the dataset that have NA value
+whodata<-na.omit(whodata)
+head(whodata)
+```
+
+```{r}
+#building a multi-linear regression model with life expectancy as the response variable 
+model1<-lm(Life.expectancy~Year+Alcohol+Total.expenditure+GDP+Income.composition.of.resources+Schooling+Population+percentage.expenditure+HIV.AIDS+Hepatitis.B+Measles,data = whodata)
+summary(model1)
+
+```
+
+$\hat{Life.expectancy}<-\hat{\beta_0}+\hat{\beta_1}\hat{Year}+\hat{\beta_2}\hat{Alcohol}+\hat{\beta_3}\hat{Total.expenditure}+\hat{\beta_4}\hat{GDP}+\hat{\beta_5}\hat{Income.composition.of.resources}+\hat{\beta_6}\hat{Schooling}+\hat{\beta_7}\hat{Population}+\hat{\beta_8}\hat{Percentage.expenditure}+\hat{\beta_9}\hat{HIV.AIDS}+\hat{\beta_{10}}\hat{Hepatitis.B}+\hat{\beta_{11}}\hat{Measles}$
+
+```{r}
+#checking the 95% confodent interval for the coefficients of the variables
+confint(model1)
+```
+
+We are 95% confident that the coefficient of GDP,Population,Measles can be zero,indicating that they are not related to the response variable.The p values of these 3 variables are greater than $\alpha$.
+
+```{r}
+library(ggplot2)
+df <- data.frame(whodata)
+#plot( whodata$percentage.expenditure,whodata$Life.expectancy, colo)
+ggplot( df,aes(x = whodata$Schooling, y = Life.expectancy, )) + 
+  geom_point() +
+  labs(x = "Schooling", y = "life expectancy", title = "Relationship between Life expectancy and Schooling") +
+  theme_bw()  
+```
+
+**Performing F-test to see if the coefficients are zero or not**
+
+$H_0:\beta_4=\beta_7=\beta_{11}=0$
+
+$H_1:\beta_4=\beta_7=\beta_{11}\neq0$
+
+```{r}
+#building an other model by removing the 3 variables-GDP,Population,Measles
+model2<-lm(Life.expectancy~Year+Alcohol+Total.expenditure+Income.composition.of.resources+Schooling+percentage.expenditure+HIV.AIDS+Hepatitis.B,data = whodata)
+
+model1<-lm(Life.expectancy~Year+infant.deaths+Alcohol+Total.expenditure+GDP+Income.composition.of.resources+Schooling+Population+percentage.expenditure+HIV.AIDS+Hepatitis.B+Measles,data = whodata)
+#performing F test to compare the models 
+anova(model2,model1)
+```
+
+Since the pvalue of f-test \>0.05,we fail to reject the null hypothesis. So we can remove those 3 predictors, Therefore,GDP,Population,Measles are insignificant .
+
+```{r}
+summary(model2)
+```
+
+Checking the l assumptions-
+
+```{r}
+#linearlity
+pairs(Life.expectancy~Year+Alcohol+Total.expenditure+Income.composition.of.resources+Schooling+percentage.expenditure+HIV.AIDS+Hepatitis.B,data = whodata)
+```
+
+As seen,the percentage.expenditure is not linearly related to the response variable.Transformation is applied
+
+```{r}
+#removing the rows that have 0 as the percentage expenditure.
+#This new data is stored in whonew
+whonew<-whodata[whodata$percentage.expenditure!=0,]
+```
+
+```{r}
+#building a new model after transforming the predictor variable.
+model3<-lm(Life.expectancy~Year+Alcohol+Total.expenditure+Income.composition.of.resources+Schooling+log(percentage.expenditure)+HIV.AIDS+Hepatitis.B,data = whonew)
+summary(model3)
+```
+
+Checking the assumptions for the new model
+
+```{r}
+#linearity
+pairs(Life.expectancy~Year+Alcohol+Total.expenditure+Income.composition.of.resources+Schooling+log(percentage.expenditure)+HIV.AIDS+Hepatitis.B,data = whonew)
+```
+
+The linearity condition is satisfied.
+
+```{r}
+#normality
+qqnorm(rstandard(model3))
+qqline(rstandard(model3))
+```
+
+```{r}
+#variability
+plot(predict(model3), rstandard(model3),xlab="Fitted Values", ylab="Standardized Residuals")
+abline(h=0)
+```
+
+The points in the residual plot look randomly scattered and show no obvious patterns, indicating that the\
+assumptions are reasonably satisfied(linearity and constant variance).From the QQ plot we can say that the normality has been satisfied too since the qqline passes through the majority of the points.
+
+```{r}
+p <- 8#number of predictor variables in the model3
+n <- nrow(whodata)#number of observations/rows
+#scatter plot of h-values and standardized residuals
+plot(hatvalues(model3), rstandard(model3),xlab='Leverage', ylab='Standardized Residuals',main = 'Outliers and Leverage points ')
+
+abline(h=c(-2,2),v = 2*(p+1)/n, lty=4)
+
+
+```
+
+```{r}
+#detecting multi colinearity using vif
+round(vif(model3),2)
+```
+
+The variation inflation factors of the predictor variables are less than 5.
+
+```{r}
+#performing the step() function to select a model by using AIC
+stepmodel<-stepAIC(model1,direction = "both")
+summary(stepmodel)
+```
+
+The model suggested by the step() function using AIC is slightly different from the model3.
+
+Training and testing is performed on both these models.
+
+```{r}
+library(caret)
+```
+
+```{r}
+#setting a seed
+set.seed(100)
+#using the createDataPartition() function to split the dataset into training and testing data (70:30)
+index<-createDataPartition(y=whonew$Life.expectancy,p=0.7,list=FALSE)
+train<-whonew[index,]
+test<-whonew[-index,]
+```
+
+```{r}
+#model3 built by the training data
+finalmodel<-lm(Life.expectancy~Year+Alcohol+Total.expenditure+Income.composition.of.resources+Schooling+log(percentage.expenditure)+HIV.AIDS+Hepatitis.B,data = train)
+summary(finalmodel)
+```
+
+```{r}
+#suggested model built on the train data
+suggestedmodel<-lm(formula = Life.expectancy ~ Year + infant.deaths + Alcohol + 
+    Total.expenditure + Income.composition.of.resources + Schooling + 
+    percentage.expenditure + HIV.AIDS + Hepatitis.B, data = train)
+summary(suggestedmodel)
+```
+
+```{r}
+#using the predict function  on the finalmodel to predict the life.expectancy given the test data
+predict_Life.expecentancy_final<-predict(finalmodel,test)
+test["predicted.by.finalmodel"]<-predict_Life.expecentancy_final
+```
+
+```{r}
+plot(test$predicted.by.finalmodel,test$Life.expectancy)
+abline(lm(test$predicted.by.finalmodel~test$Life.expectancy))
+```
+
+```{r}
+#using the predict function  on the suggestedmodel to predict the life.expectancy given the test data
+predict_Life.expecentancy_suggested<-predict(suggestedmodel,test)
+test["predicted.by.suggestedmodel"]<-predict_Life.expecentancy_suggested
+```
+
+```{r}
+plot(test$predicted.by.suggestedmodel,test$Life.expectancy)
+abline(lm(test$predicted.by.suggestedmodel~test$Life.expectancy))
+```
+
+The adjusted r-square of the finalmodel is more than the adjusted r-square of the suggested model.
+
+```{r}
+#calculating rmse metric
+#install.packages("metrics")
+library(ModelMetrics)
+rmse_final <- rmse(test$Life.expectancy, test$predicted.by.finalmodel)
+rmse_suggested<-rmse(test$Life.expectancy,test$predicted.by.suggestedmodel)
+rmse_final
+rmse_suggested
+```
+
+The RMSE of the full model is less than the RMSE of the suggested model.
+
+By considering both adjusted r square and RMSE values,finalmodel is the best fit for the dataset.
+
+The equation for the multi-linear regression model is-
+
+$\hat{Life.expectancy}=\hat{\beta_0}+\hat{\beta_1}\hat{Alcohol}+\hat{\beta_2}\hat{Total.expenditure}+\hat{\beta_3}\hat{Income.composition.of.resources}+\hat{\beta_4}\hat{Schooling}+\hat{\beta_5}\hat{log(percentage.expenditure)}+\hat{\beta_6}\hat{HIV.AIDS}+\hat{\beta_7}\hat{Hepatitis.B}$
